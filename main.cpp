@@ -9,17 +9,24 @@
 
 using namespace std;
 
-// Параметры алгоритма
-constexpr int N = 100;               // Размер популяции
+// -------------------------
+// Параметры алгоритма MOEA/D
+// -------------------------
+constexpr int N = 100;               // Размер популяции (число подзадач)
 constexpr int T = 17;                // Число соседей
 constexpr int MAX_GENERATIONS = 500; // Максимальное число поколений
 constexpr int RUNS = 50;             // Количество независимых запусков
 
-// Параметры бинарного кодирования (3 переменные: первая в [0,1], остальные в [-1,1])
+// -------------------------
+// Параметры бинарного кодирования
+// Для n = 3 переменных:
+// x1 ∈ [0,1] (первый параметр),
+// x2, x3 ∈ [-1,1] (оставшиеся параметры)
+// -------------------------
 constexpr double X0_MIN = 0.0, X0_MAX = 1.0;
 constexpr double XK_MIN = -1.0, XK_MAX = 1.0;
 constexpr int PRECISION = 16;
-constexpr int IND_SIZE = 3 * PRECISION; // 3 переменные, каждая кодируется PRECISION битами
+constexpr int IND_SIZE = 3 * PRECISION;
 constexpr double EPS = 1e-6;
 
 enum class CrossoverType { ONE_POINT, TWO_POINT, UNIFORM };
@@ -34,11 +41,11 @@ static uniform_int_distribution<int> distBit(0, 1);
 
 struct Individual {
     vector<int>    genes;
-    vector<double> f;
+    vector<double> f; // Две цели
     Individual() : genes(IND_SIZE), f(2, 0.0) {}
 };
 
-// Функция декодирования бинарной строки в число
+// Функция декодирования бинарной строки в число из диапазона [lo, hi]
 double decode(const vector<int>& g, int start, double lo, double hi) {
     long long val = 0;
     for (int i = 0; i < PRECISION; ++i)
@@ -46,21 +53,39 @@ double decode(const vector<int>& g, int start, double lo, double hi) {
     return lo + (hi - lo) * val / ((1LL << PRECISION) - 1);
 }
 
-// Функция оценки. Реализована для задачи 1 согласно пособию.
+// -------------------------------------------------------------------------
+// Функция оценки для второй задачи (см. формулы (5.10.6)–(5.10.8) учебного пособия)
 // Пусть:
-//  x0 = x[0] ∈ [0,1]  – первый параметр;
-//  x1 = x[1] ∈ [-1,1] – должен стремиться к sin(6π*x0+2π/3);
-//  x2 = x[2] ∈ [-1,1] – должен стремиться к sin(6π*x0+π).
-// Тогда целевые функции:
-//  f1 = x0 + |x1 - sin(6πx0+2π/3)|
-//  f2 = 1 - sqrt(x0) + |x2 - sin(6πx0+π)|
+//   x1 = decode(genes[0...PRECISION-1]) ∈ [0, 1],
+//   x2 = decode(genes[PRECISION...2*PRECISION-1]) ∈ [-1, 1],
+//   x3 = decode(genes[2*PRECISION...3*PRECISION-1]) ∈ [-1, 1].
+// В идеале должны выполняться равенства:
+//    x2 = y2  и  x3 = y3,
+// где
+//    y2 = (0.3*x3*cos(2.47*x1+4.0) + 0.6*x1)* sin(6.7*x1+3.0)
+//    y3 = (0.3*x3*cos(2.47*x1+8.0) + 0.6*x1)* cos(6.7*x1+3.0)
+// Тогда:
+//    f1 = x1 + |x2 - y2|
+//    f2 = 1 - sqrt(x1) + |x3 - y3|
+// При идеальном случае получаем: f1 = x1 и f2 = 1 - sqrt(x1),
+// что и задаёт истинный фронт: f2 = 1 - sqrt(f1),  f1 ∈ [0,1].
+// -------------------------------------------------------------------------
 vector<double> evaluate(const Individual& ind) {
-    double x0 = decode(ind.genes, 0, X0_MIN, X0_MAX);
-    double x1 = decode(ind.genes, PRECISION, XK_MIN, XK_MAX);
-    double x2 = decode(ind.genes, 2 * PRECISION, XK_MIN, XK_MAX);
+    double x1 = decode(ind.genes, 0, X0_MIN, X0_MAX);              // x1 ∈ [0,1]
+    double x2 = decode(ind.genes, PRECISION, XK_MIN, XK_MAX);        // x2 ∈ [-1,1]
+    double x3 = decode(ind.genes, 2 * PRECISION, XK_MIN, XK_MAX);    // x3 ∈ [-1,1]
+
+    // Вычисление желаемого значения y2 для подмножества J2 (смещение = 4)
+    double base_y2 = 0.3 * x3 * cos(2.47 * x1 + 4.0) + 0.6 * x1;
+    double y2 = base_y2 * sin(6.7 * x1 + 3.0);
+
+    // Вычисление желаемого значения y3 для подмножества J1 (смещение = 8)
+    double base_y3 = 0.3 * x3 * cos(2.47 * x1 + 8.0) + 0.6 * x1;
+    double y3 = base_y3 * cos(6.7 * x1 + 3.0);
+
     vector<double> f(2, 0.0);
-    f[0] = x0 + fabs(x1 - sin(6 * M_PI * x0 + 2 * M_PI / 3));
-    f[1] = 1.0 - sqrt(x0) + fabs(x2 - sin(6 * M_PI * x0 + M_PI));
+    f[0] = x1 + fabs(x2 - y2);            // Целевая функция f1
+    f[1] = 1.0 - sqrt(x1) + fabs(x3 - y3);  // Целевая функция f2
     return f;
 }
 
@@ -75,17 +100,17 @@ vector<Individual> initPopulation() {
     return pop;
 }
 
-// Инициализация весовых векторов
+// Инициализация весовых векторов (равномерное разбиение для 2 целей)
 vector<vector<double>> initWeights() {
     vector<vector<double>> W(N, vector<double>(2, 0.0));
     for (int i = 0; i < N; ++i) {
         double w1 = double(i) / (N - 1);
-        W[i] = {w1, 1.0 - w1};
+        W[i] = { w1, 1.0 - w1 };
     }
     return W;
 }
 
-// Инициализация соседей для каждого весового вектора по Евклидову расстоянию
+// Инициализация соседей для каждого весового вектора (по Евклидову расстоянию)
 vector<vector<int>> initNeighbors(const vector<vector<double>>& W) {
     vector<vector<int>> B(N);
     for (int i = 0; i < N; ++i) {
@@ -93,7 +118,7 @@ vector<vector<int>> initNeighbors(const vector<vector<double>>& W) {
         for (int j = 0; j < N; ++j) {
             double dx = W[i][0] - W[j][0];
             double dy = W[i][1] - W[j][1];
-            d.push_back({sqrt(dx * dx + dy * dy), j});
+            d.push_back({ sqrt(dx * dx + dy * dy), j });
         }
         sort(d.begin(), d.end(), [](auto& a, auto& b) { return a.first < b.first; });
         for (int k = 0; k < T; ++k)
@@ -110,7 +135,8 @@ double chebyshev(const vector<double>& f, const vector<double>& w, const vector<
     return m;
 }
 
-// Функция для проверки доминирования (для минимизации). Возвращает true, если вектор u строго лучше по крайней мере по одному критерию и не хуже по оставшимся.
+// Функция для проверки доминирования (для минимизации)
+// Возвращает true, если вектор u строго меньше v хотя бы по одному критерию и не хуже по остальных.
 bool dominates(const vector<double>& u, const vector<double>& v) {
     bool strictlyBetter = false;
     for (int i = 0; i < 2; ++i) {
@@ -122,7 +148,9 @@ bool dominates(const vector<double>& u, const vector<double>& v) {
     return strictlyBetter;
 }
 
+// ---------------------------
 // Операторы кроссовера
+// ---------------------------
 Individual onePoint(const Individual& a, const Individual& b) {
     Individual c;
     int pt = 1 + int(dist01(rng) * (IND_SIZE - 2));
@@ -154,7 +182,9 @@ Individual uniCross(const Individual& a, const Individual& b) {
     return c;
 }
 
+// ---------------------------
 // Оператор мутации
+// ---------------------------
 void mutate(Individual& ind, MutationType mt) {
     double pm = 0.0;
     if (mt == MutationType::WEAK)    pm = 1.0 / (3 * IND_SIZE);
@@ -165,9 +195,11 @@ void mutate(Individual& ind, MutationType mt) {
             ind.genes[i] = 1 - ind.genes[i];
 }
 
-// Генерация опорного (истинного) фронта Парето для IGD (для задачи 1 — 1000 точек).
-// В условном идеале для задачи 1 оптимальные значения достигаются, если x2 = sin(6πx1+2π/3) и x3 = sin(6πx1+π),
-// что даёт f1 = x1 и f2 = 1 - sqrt(x1).
+// -------------------------------------------------------------------------
+// Генерация опорного (истинного) фронта Парето для IGD для второй задачи.
+// В идеале, когда x2=y2 и x3=y3, получаем f1=x1 и f2=1-sqrt(x1),
+// т.е. истинный фронт: f2 = 1 - sqrt(f1), для f1 ∈ [0,1].
+// -------------------------------------------------------------------------
 vector<vector<double>> buildReference() {
     vector<vector<double>> P;
     P.reserve(1000);
@@ -195,6 +227,9 @@ double computeIGD(const vector<vector<double>>& P, const vector<vector<double>>&
     return sum / P.size();
 }
 
+// ============================
+// Главная функция (тестирование второй задачи)
+// ============================
 int main() {
     auto W = initWeights();
     auto B = initNeighbors(W);
@@ -202,9 +237,8 @@ int main() {
     double bestIGD = numeric_limits<double>::infinity();
     vector<vector<double>> best_EP; // архив недоминируемых решений лучшего запуска
 
-    // Независимые запуски
+    // Проведение независимых запусков
     for (int run = 0; run < RUNS; ++run) {
-        //cout << "Run " << run + 1 << " / " << RUNS << endl;
         // Инициализация популяции и идеального вектора z
         auto pop = initPopulation();
         vector<double> z(2, numeric_limits<double>::infinity());
@@ -235,12 +269,10 @@ int main() {
                 }
                 mutate(child, MT_TYPE);
                 child.f = evaluate(child);
-                // Обновление идеального вектора z
+                // Обновление идеальной точки z
                 for (int j = 0; j < 2; ++j)
                     z[j] = min(z[j], child.f[j]);
-
-                // Обновление соседей.
-                // Для каждого соседа nb из окрестности i вычисляем агрегированное значение с весовым вектором W[nb].
+                // Обновление соседей: для каждого nb из окрестности i вычисляем агрегированное значение с весом W[nb]
                 for (int nb : B[i]) {
                     double f_child = chebyshev(child.f, W[nb], z);
                     double f_nb = chebyshev(pop[nb].f, W[nb], z);
@@ -249,7 +281,7 @@ int main() {
                     }
                 }
             }
-            // Извлечение текущего фронта (недоминированных решений) из популяции
+            // Извлечение текущего недоминируемого фронта из популяции
             vector<vector<double>> pf;
             for (int i = 0; i < N; ++i) {
                 bool domFlag = false;
@@ -262,9 +294,8 @@ int main() {
                 if (!domFlag)
                     pf.push_back(pop[i].f);
             }
-            // Обновление внешнего архива EP недоминированными решениями
+            // Обновление внешнего архива EP недоминируемыми решениями
             for (const auto& p : pf) {
-                // Удаляем из EP решения, доминируемые p
                 EP.erase(remove_if(EP.begin(), EP.end(),
                                    [&](const vector<double>& e) { return dominates(p, e); }),
                          EP.end());
@@ -280,7 +311,6 @@ int main() {
             // cout << "Generation " << gen+1 << " IGD = " << igd << "\n";
         }
         double runIGD = computeIGD(ref, EP);
-        //cout << "Run " << run + 1 << " final IGD: " << runIGD << "\n";
         cout << runIGD << "\n";
         if (runIGD < bestIGD) {
             bestIGD = runIGD;
@@ -289,7 +319,7 @@ int main() {
     }
     cout << "Best IGD over all runs: " << bestIGD << endl;
 
-    // Сохранение результатов (лучший найденный фронт Парето) в файл
+    // Сохранение лучшего найденного фронта Парето в файл
     ofstream outFile("pareto_final.txt");
     if (outFile.is_open()) {
         for (const auto& p : best_EP)
