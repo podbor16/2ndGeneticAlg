@@ -1,0 +1,3 @@
+C:/Users/podbo/University/6_semester/TVI/2ndGeneticAlg/cmake-build-debug/CMakeFiles/2ndGeneticAlg.dir
+C:/Users/podbo/University/6_semester/TVI/2ndGeneticAlg/cmake-build-debug/CMakeFiles/edit_cache.dir
+C:/Users/podbo/University/6_semester/TVI/2ndGeneticAlg/cmake-build-debug/CMakeFiles/rebuild_cache.dir
