@@ -32,7 +32,7 @@ plt.plot(f1, f2, 'r-', label='Опорный фронт')
 
 plt.xlabel('f1')
 plt.ylabel('f2')
-plt.title('Аппроксимация фронта Парето для задачи 2')
+plt.title('Аппроксимация фронта Парето для задачи 3')
 plt.grid(True)
 plt.axis('equal')
 plt.legend()
