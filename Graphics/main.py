@@ -19,20 +19,20 @@ def read_data(file_path):
     return gens
 
 data = read_data('pareto_final.txt')
-# Выбираем поколение (например, последнее)
+# Выбираем последнее поколение (или лучшее найденное множество)
 front = data[-1]
 
 plt.figure(figsize=(6,6))
 plt.scatter(front[:,0], front[:,1], s=10, label='Найденный фронт')
 
-# Теоретический фронт: f₂ = 1 - sqrt(f₁), 0 <= f₁ <= 1
+# Опорный фронт для задачи 4: f2 = 1 - (f1)^2, для f1 от 0 до 1
 f1 = np.linspace(0, 1, 200)
-f2 = 1 - np.sqrt(f1)
+f2 = 1 - f1**2
 plt.plot(f1, f2, 'r-', label='Опорный фронт')
 
 plt.xlabel('f1')
 plt.ylabel('f2')
-plt.title('Аппроксимация фронта Парето для задачи 3')
+plt.title('Аппроксимация фронта Парето для задачи 4')
 plt.grid(True)
 plt.axis('equal')
 plt.legend()
